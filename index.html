@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mappa Partecipata - Bari</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css" />
+    <style>
+        body { margin: 0; font-family: Arial, sans-serif; display: flex; height: 100vh; }
+        #map { flex: 2; height: 100%; }
+        #sidebar { flex: 1; padding: 20px; background: #f8f9fa; box-sizing: border-box; overflow-y: auto; }
+        .form-group { margin-bottom: 15px; }
+        label { display: block; margin-bottom: 5px; font-weight: bold; }
+        select, input, button { width: 100%; padding: 8px; box-sizing: border-box; }
+        button { background: #28a745; color: white; border: none; cursor: pointer; font-weight: bold; }
+        button:hover { background: #218838; }
+        .popup-img { width: 100%; border-radius: 6px; margin-top: 6px; }
+        @media (max-width: 768px) {
+            body { flex-direction: column; height: auto; }
+            #map { height: 60vh; flex: none; }
+            #sidebar { height: auto; flex: none; }
+        }
+    </style>
+</head>
+<body>
+
+    <div id="map"></div>
+
+    <div id="sidebar">
+        <h2>Segnala un'area a Bari</h2>
+        <p>Carica una foto scattata con lo smartphone (con GPS attivo e senza compressione).</p>
+        <form id="uploadForm">
+            <div class="form-group">
+                <label for="categoria">Categoria:</label>
+                <select id="categoria" name="categoria">
+                    <option value="alberi">Albero Mancante</option>
+                    <option value="depavimentazione">Zona da Depavimentare</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="fileInput">Foto originale (.jpg / .jpeg con EXIF):</label>
+                <input type="file" id="fileInput" name="file" accept=".jpg, .jpeg, .JPG, .JPEG" required>
+            </div>
+            <button type="submit">Invia Segnalazione</button>
+        </form>
+        <div id="output" style="margin-top: 15px; font-weight: bold;"></div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js"></script>
+    <script>
+        const map = L.map('map').setView([41.11714, 16.87187], 13);
+        L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+            attribution: 'Tiles &copy; Esri'
+        }).addTo(map);
+
+        // Sostituisci con l'URL del tuo servizio Render una volta creato (senza barra finale)
+        const BACKEND_URL = "https://tuo-backend-render.onrender.com";
+
+        async function caricaMappa() {
+            try {
+                const res = await fetch(`${BACKEND_URL}/api/segnalazioni`);
+                if (!res.ok) throw new Error("Risposta server non valida");
+                const data = await res.json();
+
+                data.forEach(item => {
+                    const color = item.categoria === 'alberi' ? 'green' : 'orange';
+                    const popupContent = `
+                        <div style="width:210px">
+                            <strong>${item.categoria.toUpperCase()}</strong>
+                            <img src="${item.file_url}" class="popup-img" alt="Segnalazione"><br>
+                            <small>Lat: ${Number(item.latitudine).toFixed(5)}, Lon: ${Number(item.longitudine).toFixed(5)}</small>
+                        </div>`;
+
+                    L.circleMarker([item.latitudine, item.longitudine], {
+                        radius: 8,
+                        fillColor: color,
+                        color: "#fff",
+                        weight: 2,
+                        fillOpacity: 0.85
+                    }).addTo(map).bindPopup(popupContent);
+                });
+            } catch (err) {
+                console.error("Errore caricamento dati:", err);
+            }
+        }
+
+        caricaMappa();
+
+        document.getElementById('uploadForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const fileInput = document.getElementById('fileInput');
+            if (!fileInput.files.length) return;
+
+            const formData = new FormData();
+            formData.append('categoria', document.getElementById('categoria').value);
+            formData.append('file', fileInput.files[0]);
+
+            const outputEl = document.getElementById('output');
+            outputEl.innerText = "Caricamento in corso e analisi EXIF...";
+
+            try {
+                const response = await fetch(`${BACKEND_URL}/api/segnalazioni`, {
+                    method: 'POST',
+                    body: formData
+                });
+                const result = await response.json();
+
+                if (!response.ok) {
+                    outputEl.innerText = result.detail || "Errore durante l'invio.";
+                    return;
+                }
+
+                outputEl.innerText = result.message;
+                if (result.status === "success") {
+                    setTimeout(() => location.reload(), 1800);
+                }
+            } catch (err) {
+                outputEl.innerText = "Errore di connessione al server.";
+            }
+        });
+    </script>
+</body>
+</html>
